@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TAO — Drum Loop Inverse Modelling</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <h1>TAO <span>Inverse Modelling</span></h1>
+      <p class="tagline">Upload a drum loop → estimated tempo, onsets, one-shots &amp; per-onset velocity,
+        recovered end-to-end (ADT + TCN tempo · Stable-Audio-3 one-shots · analysis-by-synthesis velocity).</p>
+    </header>
+
+    <section class="uploader" id="uploader">
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept="audio/*" hidden>
+        <div class="dz-inner">
+          <div class="dz-icon">♪</div>
+          <p><strong>Drop a drum loop</strong> or click to choose</p>
+          <p class="dz-sub">wav / mp3 / flac — analysed as the first 4&nbsp;seconds</p>
+        </div>
+      </div>
+      <div class="status" id="status" hidden>
+        <div class="spinner"></div>
+        <span id="statusText">Analysing…</span>
+      </div>
+    </section>
+
+    <section class="results" id="results" hidden>
+      <!-- ============ drum-machine panel ============ -->
+      <div class="panel machine">
+        <div class="panel-head">
+          <h2>Drum Machine</h2>
+          <div class="transport">
+            <span class="bpm" id="bpmBadge">— BPM</span>
+            <button class="btn" id="playOriginal">▶ Original</button>
+            <button class="btn primary" id="playRecon">▶ Reconstruction</button>
+            <button class="btn" id="stopBtn">■ Stop</button>
+          </div>
+        </div>
+        <div class="lanes" id="lanes"></div>
+      </div>
+
+      <!-- ============ quantised step sequencer (editable) ============ -->
+      <div class="panel stepseq">
+        <div class="panel-head">
+          <h2>Step Sequencer <span class="muted-inline">— quantised &amp; editable</span></h2>
+          <div class="transport">
+            <span class="chip" id="beatType">—</span>
+            <button class="btn primary" id="playPattern">▶ Pattern</button>
+            <button class="btn" id="stopPattern">■ Stop</button>
+            <button class="btn" id="resetGrid">↺ Reset to estimated</button>
+          </div>
+        </div>
+        <p class="hint">Click a step to toggle · drag up/down on a step to set its velocity</p>
+        <div class="grid" id="stepGrid"></div>
+      </div>
+
+      <!-- ============ analysis dashboard ============ -->
+      <div class="dashboard">
+        <div class="panel wide">
+          <h3>Waveform &amp; onsets</h3>
+          <canvas id="waveform" height="140"></canvas>
+          <div class="legend">
+            <span class="lg kick">kick</span><span class="lg snare">snare</span><span class="lg hh">hi-hat</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Summary</h3>
+          <div class="stat"><span>Tempo</span><b id="statTempo">—</b></div>
+          <div class="stat"><span>Total onsets</span><b id="statOnsets">—</b></div>
+          <div class="stat"><span>Reconstruction loss</span><b id="statLoss">—</b></div>
+          <button class="btn block" id="downloadJson">⬇ Download parameters (JSON)</button>
+        </div>
+
+        <div class="panel">
+          <h3>Per-instrument</h3>
+          <table class="insttable" id="instTable">
+            <thead><tr><th>Inst</th><th>#</th><th>mean vel</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h3>Extracted one-shots</h3>
+          <div class="oneshots" id="oneshots"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

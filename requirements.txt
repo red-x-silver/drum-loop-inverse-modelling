@@ -1,0 +1,14 @@
+# Main inference environment for drum-loops-inverse-modelling.
+# (install a torch/torchaudio build matching your CUDA/CPU setup; versions below are lower bounds)
+#
+# NOTE: the Stable-Audio-3 one-shot extractor runs in a SEPARATE environment (stable-audio-tools),
+# invoked as a subprocess — it is NOT installed by this file. See README ("One-shot extraction setup").
+torch>=2.1
+torchaudio>=2.1
+numpy>=1.24,<2.0
+librosa>=0.9
+soundfile>=0.12
+pretty_midi>=0.2
+auraloss>=0.4
+Flask>=3.0
+Werkzeug>=3.0
