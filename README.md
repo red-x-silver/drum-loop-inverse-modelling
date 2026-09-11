@@ -1,4 +1,4 @@
-# Drum-loop inverse modelling
+# Drum loop inverse modelling
 
 Given a single **drum-loop audio file**, estimate the drum-machine parameters that reconstruct it:
 tempo, per-instrument onsets, one-shot samples, per-onset velocities, and a quantised 16-step
