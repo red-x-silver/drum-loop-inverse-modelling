@@ -8,7 +8,9 @@ velocities by back-prop on the reconstruction loss.
 This module provides the reusable pieces:
   * make_loss(kind)            -- L1 / MR-STFT / both reconstruction loss
   * optimize_velocities(...)   -- the Adam optimisation over per-onset velocities
-  * pearson / scale_norm_mae   -- scale-robust per-track velocity metrics
+  * pra / scale_norm_mae       -- the thesis's scale-invariant per-track velocity metrics
+                                  (pairwise ranking accuracy, Eq. 6.6; scale-normalised MAE*, Eq. 6.7)
+  * pearson                    -- secondary scale/offset-invariant correlation
   * velocity_metrics(...)      -- aggregate metrics for one loop (per-track -> mean)
 
 The __main__ block is a self-contained ORACLE self-test: it builds random one-shots,
@@ -53,10 +55,16 @@ def make_loss(kind="both", alpha_time=1.0, alpha_freq=1.0,
 
 # ---------------------------------------------------------------- optimiser
 def optimize_velocities(renderer, one_shots, onsets, target, *, mode="poly", smoothing=True,
-                        loss_kind="both", alpha_time=1.0, alpha_freq=1.0, lr=0.05, iters=500,
-                        transform="sigmoid", init_logit=4.0, loop_length=None, device=None,
+                        loss_kind="both", alpha_time=1.0, alpha_freq=1.0, lr=0.1, iters=500,
+                        transform="sigmoid", init_logit=10.0, loop_length=None, device=None,
                         patience=60, min_delta=1e-6, verbose=False):
     """Estimate per-onset velocities for one loop.
+
+    The defaults are the configuration locked in by the hyperparameter search: combined L1 +
+    MR-STFT loss at equal weighting, Adam at lr 0.1, a sigmoid reparametrisation initialised at
+    unit gain (logit 10), and a 500-iteration budget with early stopping (patience 60, best
+    iterate retained). pipeline/velocity.py passes the same values explicitly from
+    pipeline/config.py, so the two paths agree.
 
     renderer  : DifferentiableDrumRenderer
     one_shots : [B, 1, K]
@@ -96,6 +104,38 @@ def optimize_velocities(renderer, one_shots, onsets, target, *, mode="poly", smo
 
 
 # ---------------------------------------------------------------- metrics
+def pra(est, gt):
+    """Pairwise ranking accuracy -- the scale-invariant velocity-ordering metric (thesis Eq. 6.6).
+
+    Over the within-track onset pairs that carry a strict ground-truth order, PRA is the fraction
+    the estimate orders correctly:
+
+        PRA_j = 1/|C_j| * sum_{(m,m') in C_j} [ 1(concordant) + 1/2 * 1(est_m == est_m') ]
+
+    A pair is *comparable* when gt[m] != gt[m'] (equal-velocity onsets impose no order and are
+    excluded, so the metric needs no equality tolerance and stays free of the absolute-scale
+    ambiguity); it is *concordant* when sign(est_m - est_m') == sign(gt_m - gt_m'). A tied estimate
+    on a comparable pair scores 0.5 -- the same contribution as ordering it at random.
+
+    PRA = 1 is a perfectly recovered ordering, 0.5 is chance, 0 is fully reversed. Returns nan when
+    the track has no comparable pair (fewer than two onsets, or a constant ground truth); such
+    tracks are excluded from the mean and counted in the reported coverage instead.
+    """
+    if est.numel() < 2:
+        return float("nan")
+    de = est.unsqueeze(0) - est.unsqueeze(1)                    # [K, K]
+    dg = gt.unsqueeze(0) - gt.unsqueeze(1)
+    upper = torch.triu(torch.ones_like(dg, dtype=torch.bool), diagonal=1)
+    comparable = upper & (dg != 0)                              # strict GT order only
+    n = int(comparable.sum())
+    if n == 0:
+        return float("nan")
+    se, sg = torch.sign(de[comparable]), torch.sign(dg[comparable])
+    concordant = (se == sg).to(torch.float64)                   # sg is +-1 here, so se==0 -> not concordant
+    tied = (se == 0).to(torch.float64)
+    return float((concordant + 0.5 * tied).sum() / n)
+
+
 def pearson(est, gt):
     """Scale/offset-invariant. Returns nan if <2 points or zero variance."""
     if est.numel() < 2:
@@ -115,19 +155,31 @@ def scale_norm_mae(est, gt):
 
 
 def velocity_metrics(est_list, gt_list):
-    """est_list, gt_list: per-track lists of 1-D tensors (one loop). Per-track -> mean over tracks."""
-    prs, maes, cov = [], [], 0
+    """est_list, gt_list: per-track lists of 1-D tensors (one loop). Per-track -> mean over tracks.
+
+    Reports the two thesis metrics -- PRA (Eq. 6.6) with its coverage, and the scale-normalised
+    MAE* (Eq. 6.7) -- plus Pearson as a secondary scale/offset-invariant correlation. PRA and
+    Pearson are averaged only over the tracks on which they are defined; MAE* is defined for every
+    track (including constant-velocity ones), which is what compensates for PRA's reduced coverage.
+    """
+    pras, prs, maes, cov = [], [], [], 0
     for est, gt in zip(est_list, gt_list):
         est, gt = est.detach().float().cpu(), gt.detach().float().cpu()
+        p = pra(est, gt)
+        if not math.isnan(p):
+            pras.append(p); cov += 1
         r = pearson(est, gt)
-        maes.append(scale_norm_mae(est, gt))
         if not math.isnan(r):
-            prs.append(r); cov += 1
+            prs.append(r)
+        maes.append(scale_norm_mae(est, gt))
+    n = len(gt_list)
     return {
-        "pearson": (sum(prs) / len(prs)) if prs else float("nan"),
+        "pra": (sum(pras) / len(pras)) if pras else float("nan"),
+        "pra_coverage": (cov / n) if n else float("nan"),   # fraction of tracks with a defined PRA
         "mae_scalenorm": (sum(maes) / len(maes)) if maes else float("nan"),
-        "n_tracks": len(gt_list),
-        "n_tracks_pearson": cov,       # tracks with a defined Pearson (>=2 onsets, GT variance>0)
+        "pearson": (sum(prs) / len(prs)) if prs else float("nan"),
+        "n_tracks": n,
+        "n_tracks_pra": cov,           # tracks with a comparable pair (>=2 onsets, non-constant GT)
     }
 
 
@@ -150,7 +202,7 @@ if __name__ == "__main__":
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device={dev}")
-    print(f"{'mode':<6}{'smooth':<8}{'loss':<8}{'pearson':>9}{'mae*':>8}{'recon':>10}{'iters':>7}")
+    print(f"{'mode':<6}{'smooth':<8}{'loss':<8}{'PRA':>8}{'cov':>7}{'mae*':>8}{'recon':>10}{'iters':>7}")
     for mode in ("poly", "mono"):
         for sm in (True, False):
             for lk in ("both", "l1", "mrstft"):
@@ -159,6 +211,6 @@ if __name__ == "__main__":
                 est, info = optimize_velocities(r, one_shots, onsets, target, mode=mode, smoothing=sm,
                                                 loss_kind=lk, lr=0.1, iters=400, device=dev)
                 m = velocity_metrics(est, gt_vel)
-                print(f"{mode:<6}{str(sm):<8}{lk:<8}{m['pearson']:>9.4f}{m['mae_scalenorm']:>8.4f}"
-                      f"{info['final_loss']:>10.5f}{info['iters_run']:>7d}")
-    print("OK (oracle: pearson should be ~1.0, mae* ~0)")
+                print(f"{mode:<6}{str(sm):<8}{lk:<8}{m['pra']:>8.4f}{m['pra_coverage']:>7.2f}"
+                      f"{m['mae_scalenorm']:>8.4f}{info['final_loss']:>10.5f}{info['iters_run']:>7d}")
+    print("OK (oracle: PRA should be ~1.0, mae* ~0)")

@@ -31,7 +31,7 @@ ONSET_CHANNELS = {"kick": 0, "snare": 1, "hh": 2}        # 3-ch ADT output order
 ADT_CKPT = str(MODELS / "adt" / "adt_baseline_all.ckpt")
 PEAK_PICKING_JSON = str(MODELS / "adt" / "peak_picking.json")
 # tempo: madmom-style TCN head at the 'shallow' (post-CNN) tap on the FROZEN ADT trunk.
-# shallow chosen over mid/deep: best Acc1 (0.864) and fewest octave errors on the prior set.
+# shallow chosen over mid/deep: highest FSL-1147 Acc1 among TCN insert positions
 TEMPO_CKPT = str(MODELS / "tempo" / "tempo_shallow_tcn_faithful.ckpt")
 TEMPO_POSITION = "shallow"
 TEMPO_MODULE = "tcn-faithful"
@@ -39,23 +39,43 @@ TEMPO_PROJ_DIM = 256          # tcn-faithful internally fixes eff_d=16; kept for
 TEMPO_MID_GRU = 1
 TEMPO_LOW = 60                # BPM = argmax(logits) + TEMPO_LOW
 
-# --- Stable-Audio-3 one-shot extraction (small-rank4, step 4000) -------------
-# The LoRA adapter is bundled; the base model + its own venv are provided by you (see README).
-SA3_LORA = str(MODELS / "lora" / "lora_small_r4_step04000.safetensors")
-SA3_RANK = 4
+# --- Stable-Audio-3 one-shot extraction (Stable-one-shot) --------------------
+# Two extractor configurations are released, matching the two options reported in the thesis:
+#   small-r4    SA3-Small-Music backbone + rank-4  LoRA (2.6M adapter params) -- efficient (default)
+#   medium-r16  SA3-Medium      backbone + rank-16 LoRA (20.7M adapter params) -- higher fidelity
+# Both adapters were trained for 4000 steps on the clean (mode03-excluded) DITS configuration.
+# Select with the SA3_VARIANT environment variable; both LoRA adapters are bundled, the two base
+# models are downloaded separately into models/sa3-base/ and models/sa3-base-medium/ (see README).
+SA3_VARIANTS = {
+    "small-r4":   {"lora": "lora_small_r4_step04000.safetensors",   "rank": 4,
+                   "base_dir": "sa3-base"},
+    "medium-r16": {"lora": "lora_medium_r16_step04000.safetensors", "rank": 16,
+                   "base_dir": "sa3-base-medium"},
+}
+SA3_VARIANT = os.environ.get("SA3_VARIANT", "small-r4")
+if SA3_VARIANT not in SA3_VARIANTS:
+    raise ValueError(f"unknown SA3_VARIANT {SA3_VARIANT!r} (expected one of {list(SA3_VARIANTS)})")
+_SA3 = SA3_VARIANTS[SA3_VARIANT]
+
+SA3_LORA = str(MODELS / "lora" / _SA3["lora"])
+SA3_RANK = _SA3["rank"]
+SA3_BASE_DIR = MODELS / _SA3["base_dir"]
 SA3_DIR = str(ROOT / "sa3")                              # bundled SA3 glue scripts
 SA3_SCRIPT = "infer_loop.py"
-# --- edit these to point at your SA3 install --------------------------------
-# Python interpreter of the stable-audio-tools environment (has stable_audio_tools installed).
-SA3_PYTHON = os.environ.get(
-    "SA3_PYTHON", r"D:/stable-audio-3/stable-audio-tools/.venv/Scripts/python.exe")
-# Base model config + weights (download into models/sa3-base/ — see README).
-SA3_REPO_CFG = os.environ.get("SA3_REPO_CFG", str(MODELS / "sa3-base" / "model_config.json"))
-SA3_BASE_CKPT = os.environ.get("SA3_BASE_CKPT", str(MODELS / "sa3-base" / "model.safetensors"))
+# --- point these at your SA3 install ----------------------------------------
+# Python interpreter of the stable-audio-tools environment (the one with stable_audio_tools
+# installed). There is no portable default -- set the SA3_PYTHON environment variable, e.g.
+#   export SA3_PYTHON=/path/to/stable-audio-tools/.venv/bin/python          (Linux/macOS)
+#   set     SA3_PYTHON=C:\path\to\stable-audio-tools\.venv\Scripts\python.exe   (Windows)
+# or edit the fallback below. Only the one-shot / full / params modes need it.
+SA3_PYTHON = os.environ.get("SA3_PYTHON", "")
+# Base model config + weights (download into the variant's base dir — see README).
+SA3_REPO_CFG = os.environ.get("SA3_REPO_CFG", str(SA3_BASE_DIR / "model_config.json"))
+SA3_BASE_CKPT = os.environ.get("SA3_BASE_CKPT", str(SA3_BASE_DIR / "model.safetensors"))
 # ----------------------------------------------------------------------------
 SA3_PY = SA3_PYTHON                                      # alias used by pipeline.oneshots
 SA3_SEED = 0                  # which generated seed to keep as the one-shot
-SA3_STEPS = 50
+SA3_STEPS = 50                # rectified-flow Euler sampling steps
 
 # --- velocity estimation (locked optimal configuration from the pilot) -------
 VEL_LOSS = "both"             # L1 + multi-resolution STFT

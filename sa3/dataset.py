@@ -145,7 +145,9 @@ def collate(batch):
 
 if __name__ == "__main__":
     import sys
-    roots = sys.argv[1:] or [r"G:/exp-datasets-same-latents/TRAIN-allconfigs/none-mono"]
+    roots = sys.argv[1:] or [os.environ.get("SA3_TRAIN_ROOT", "")]
+    if not roots[0]:
+        raise SystemExit("usage: python dataset.py <latent-root> [...]  (or set SA3_TRAIN_ROOT)")
     ds = DrumLatentCanvasDataset(roots, limit=200)
     print(f"dataset files: {len(ds)}")
     from torch.utils.data import DataLoader

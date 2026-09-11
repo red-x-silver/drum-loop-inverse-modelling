@@ -8,7 +8,7 @@ Self-contained implementation matching the thesis description exactly (one bar, 
   * step velocity: SAME floor+rho assignment as q_j; MAX of onsets folded on the step
     (track-mean fallback for an active step with no folded onset)
 
-The swing classes are those used by the dataset generator (kon_sequencer/data_modules.py). rho (0.75)
+The swing classes are those used by the dataset generator (TaoDrumMachine/data_modules.py). rho (0.75)
 exceeds the largest swing offset ratio (2*0.71 - 1 = 0.42) so even a maximally-swung onset is not
 rounded forward off its step.
 """

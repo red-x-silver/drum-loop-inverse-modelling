@@ -8,20 +8,35 @@ Modes:
   --test-forward     load model, run ONE training step, print loss (wiring check)
   --smoke N          overfit K cached pairs for N steps; log loss; sample+decode a one-shot
 
-Run:  .venv/Scripts/python.exe scripts_drumext/optionB_train.py --smoke 400 --pairs 8
+Paths (base model, latent cache, run dir) come from environment variables -- see below.
+
+Run:  <stable-audio-tools venv>/python sa3/train.py --smoke 400 --pairs 8
 """
 import os, sys, json, struct, argparse, time, math
 import numpy as np, torch, torch.nn.functional as F, soundfile as sf
 sys.path.insert(0, os.path.dirname(__file__))
 from dataset import DrumLatentCanvasDataset, collate
 
-REPO_CFG = r"D:\stable-audio-3\stabilityaistable-audio-3-medium\model_config.json"
-CKPT     = r"D:\stable-audio-3\stabilityaistable-audio-3-medium\model.safetensors"
-CACHE    = r"G:/exp-datasets-same-latents/TRAIN-allconfigs/none-mono"
-TRAIN_ROOT = r"G:/exp-datasets-same-latents/TRAIN-allconfigs"
-VAL_ROOT   = r"G:/exp-datasets-same-latents/VAL-allconfigs"
-OUT      = r"D:\stage3\optionB_smoke"
-RUN_DIR  = r"D:\stage3\optionB_run"
+# --- paths -------------------------------------------------------------------
+# All configurable by environment variable (or by --repo-cfg / --ckpt / --run-dir on the CLI).
+# There are no portable defaults for these: the base model is downloaded per its licence and the
+# latent roots are a pre-encoded SAME cache produced by the research pipeline, so set them for your
+# machine before training. Inference does NOT use any of them -- pipeline/config.py drives that and
+# passes --repo-cfg / --base-ckpt / --ckpt explicitly (see pipeline/oneshots.py).
+_MODELS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+
+# Base model to adapt: models/sa3-base (small) or models/sa3-base-medium (medium).
+REPO_CFG = os.environ.get("SA3_REPO_CFG", os.path.join(_MODELS, "sa3-base", "model_config.json"))
+CKPT     = os.environ.get("SA3_BASE_CKPT", os.path.join(_MODELS, "sa3-base", "model.safetensors"))
+# Pre-encoded SAME latent cache (see the thesis data-synthesis pipeline); required for training only.
+TRAIN_ROOT = os.environ.get("SA3_TRAIN_ROOT", "")
+VAL_ROOT   = os.environ.get("SA3_VAL_ROOT", "")
+CACHE      = os.environ.get("SA3_CACHE_ROOT", TRAIN_ROOT)
+# Ground-truth one-shot lookup for the held-out validation loops (optional).
+GT_LOOKUP  = os.environ.get("SA3_GT_LOOKUP", "")
+# Where training runs are written.
+RUN_DIR  = os.environ.get("SA3_RUN_DIR", "runs/lora")
+OUT      = os.environ.get("SA3_OUT_DIR", "runs/smoke")
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 def read_safetensors_all(path):
@@ -163,6 +178,13 @@ def sample_oneshot(model, batch, steps=50):
     return x                                                 # (B,256,256) generated canvas
 
 def decode_region(model, z_canvas, sl, trim=3e-3):
+    """Decode the generated one-shot region of the canvas back to a mono waveform.
+
+    `trim` drops the trailing silence the decoder emits after the one-shot's tail: everything past
+    the last sample whose absolute amplitude exceeds `trim` (3e-3 ~= -50 dBFS) is cut. This is a
+    cosmetic post-process on the returned audio only -- it is not part of the extraction model and
+    does not affect training or the loss. Pass trim=0 to keep the full decoded region.
+    """
     g0,g1=sl
     model.pretransform.eval()
     with torch.no_grad():
@@ -179,14 +201,18 @@ def save_lora(model, path, rank=16, alpha=None):
     save_lora_safetensors(sd, {"rank":rank,"alpha":alpha,"adapter_type":"lora","exclude":["seconds_total"]}, path)
 
 def run_full(args, model, params):
+    if not TRAIN_ROOT or not VAL_ROOT:
+        raise SystemExit(
+            "Training needs a pre-encoded SAME latent cache. Set SA3_TRAIN_ROOT and SA3_VAL_ROOT "
+            "(and optionally SA3_GT_LOOKUP) to point at it. Inference does not need these -- see "
+            "the README; only one-shot *training* is run from this script.")
     RUN_DIR=args.run_dir
     os.makedirs(RUN_DIR, exist_ok=True); os.makedirs(os.path.join(RUN_DIR,"demos"), exist_ok=True)
     from torch.utils.data import DataLoader
     t0=time.time()
     # Train on all TRAIN loops (baked-in one-shots). Held-out eval = the real VAL loops paired
     # with their TRUE GT one-shots, fetched from DOSE validation via seq_params sample names.
-    GT_LOOKUP=r"G:/exp-datasets-same-latents/dose_val_oneshots.npz"
-    gt=dict(np.load(GT_LOOKUP)) if os.path.exists(GT_LOOKUP) else None
+    gt=dict(np.load(GT_LOOKUP)) if (GT_LOOKUP and os.path.exists(GT_LOOKUP)) else None
     dm=args.drop_modes or None
     train_ds=DrumLatentCanvasDataset([TRAIN_ROOT], gap_frames=3, drop_modes=dm)
     val_ds  =DrumLatentCanvasDataset([VAL_ROOT],   gap_frames=3, gt_lookup=gt, drop_modes=dm)

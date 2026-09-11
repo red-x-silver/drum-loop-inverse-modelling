@@ -1,10 +1,8 @@
 {
-  "model": "ckpt:step=38000-val_total_loss=0.0109.ckpt",
-  "checkpoint": "F:/exp-results/NEW-VAL-SampleFromALLConfig/baseline_all_seed42/step=38000-val_total_loss=0.0109.ckpt",
-  "val_root": "F:/exp-datasets/VAL-allconfigs",
+  "_comment": "Peak-picking parameters for the bundled DITS-ADT checkpoint (models/adt/adt_baseline_all.ckpt). Grid-searched per instrument on the DITS validation set, following the ADTOF protocol. Only 'pp_params' is read at inference (see pipeline/onsets.py).",
+  "model": "adt_baseline_all.ckpt",
+  "tuned_on": "DITS validation set",
   "n_samples": 3000,
-  "sample": 3000,
-  "seed": 0,
   "modes": [
     "mode01_basic",
     "mode02_LUFSNorm",
@@ -46,39 +44,12 @@
   ],
   "result": {
     "kick": {
-      "params": {
-        "threshold": 0.29999999999999993,
-        "pre_avg": 0.08,
-        "post_avg": 0.01,
-        "pre_max": 0.01,
-        "post_max": 0.01,
-        "combine": 0.02,
-        "fps": 100
-      },
       "onset_f": 0.9890131903820161
     },
     "snare": {
-      "params": {
-        "threshold": 0.35,
-        "pre_avg": 0.12000000000000001,
-        "post_avg": 0.01,
-        "pre_max": 0.03,
-        "post_max": 0.03,
-        "combine": 0.02,
-        "fps": 100
-      },
       "onset_f": 0.9742453308349219
     },
     "hihats": {
-      "params": {
-        "threshold": 0.22499999999999998,
-        "pre_avg": 0.18,
-        "post_avg": 0.01,
-        "pre_max": 0.01,
-        "post_max": 0.01,
-        "combine": 0.02,
-        "fps": 100
-      },
       "onset_f": 0.9833141681193165
     }
   }

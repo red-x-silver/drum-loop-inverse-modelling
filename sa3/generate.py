@@ -32,12 +32,12 @@ def build_for(ds, npz_path, dose_inst):
 
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default=r"D:/stage3/optionB_run_nomode3/lora_last.safetensors")
+    ap.add_argument("--ckpt", required=True, help="LoRA adapter .safetensors (see models/lora/)")
     ap.add_argument("--insts", nargs="+", default=["kick","snare"])
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--steps", type=int, default=50)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default=r"D:/stage3/optionB_nomode3_extra")
+    ap.add_argument("--out", required=True, help="output directory for the generated one-shots")
     args=ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     torch.manual_seed(args.seed)
@@ -47,7 +47,9 @@ def main():
     load_lora_ckpt(model, args.ckpt)
     model.eval()
 
-    gt=dict(np.load(r"G:/exp-datasets-same-latents/dose_val_oneshots.npz"))
+    if not T.GT_LOOKUP:
+        raise SystemExit("Set SA3_GT_LOOKUP to the ground-truth one-shot latent lookup (.npz).")
+    gt=dict(np.load(T.GT_LOOKUP))
     ds=DrumLatentCanvasDataset([T.VAL_ROOT], gap_frames=3, gt_lookup=gt, drop_modes=["mode03"])
     files=ds.files
 

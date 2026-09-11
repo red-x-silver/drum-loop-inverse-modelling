@@ -83,16 +83,17 @@ def oneshots(wav_path, out_dir=None, device=None, json_path=None):
     Does not run the ADT/tempo model."""
     import torchaudio
     from pipeline.infer import load_loop_4s
-    from pipeline.oneshots import extract_oneshots, loop_hash
+    from pipeline.oneshots import cache_dir, extract_oneshots, loop_hash
 
     target = load_loop_4s(wav_path)                              # [1, T]
     key = loop_hash(target)
-    loop_wav = C.CACHE_ROOT / "oneshots" / key / "loop_4s.wav"
+    loop_wav = cache_dir(key) / "loop_4s.wav"
     loop_wav.parent.mkdir(parents=True, exist_ok=True)
     torchaudio.save(str(loop_wav), target, C.SR)
     _one, oneshot_dir = extract_oneshots(loop_wav, target)
 
     out = {"mode": "oneshots", "cache_key": key, "sample_rate": C.SR,
+           "oneshot_model": C.SA3_VARIANT,
            "oneshot_dir": str(oneshot_dir), "oneshots": {}}
     for inst in C.INSTRUMENTS:
         src = os.path.join(str(oneshot_dir), f"one_shot_{C.INSTRU_DIR[inst]}.wav")
@@ -116,6 +117,7 @@ def _analyze_full(wav_path, out_dir, device, with_quantize):
         "duration_analyzed_s": result["duration_analyzed_s"],
         "cache_key": result["cache_key"],
         "tempo_bpm": result["tempo_bpm"],
+        "oneshot_model": result.get("oneshot_model"),
         "instruments": {inst: {
             "onsets_s": result["instruments"][inst]["onsets_s"],
             "onsets_samples": result["instruments"][inst]["onsets_samples"],

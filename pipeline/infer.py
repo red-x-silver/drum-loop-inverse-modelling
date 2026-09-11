@@ -9,7 +9,7 @@ import torchaudio
 from . import config as C
 from .adt_tempo_model import ADTTempoModel
 from .onsets import build_pickers, pick_onsets
-from .oneshots import extract_oneshots, loop_hash
+from .oneshots import cache_dir, extract_oneshots, loop_hash
 from .velocity import make_renderer, estimate_velocities
 from .quantize import quantize_params
 
@@ -57,11 +57,12 @@ class Pipeline:
         mix = None
         if do_oneshots:
             # persist the analysed 4 s loop for SA3 (and as the reconstruction target reference)
-            loop_wav = C.CACHE_ROOT / "oneshots" / key / "loop_4s.wav"
+            loop_wav = cache_dir(key) / "loop_4s.wav"
             loop_wav.parent.mkdir(parents=True, exist_ok=True)
             torchaudio.save(str(loop_wav), target, C.SR)
             one_shots, oneshot_dir = extract_oneshots(loop_wav, target)
             result["oneshot_dir"] = str(oneshot_dir)
+            result["oneshot_model"] = C.SA3_VARIANT               # 'small-r4' | 'medium-r16'
             if do_velocity:
                 onsets_samples = [onsets[inst]["samples"] for inst in C.INSTRUMENTS]
                 vels, mix, info = estimate_velocities(self.renderer, one_shots, onsets_samples,

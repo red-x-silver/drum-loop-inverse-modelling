@@ -24,9 +24,12 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--loop", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--ckpt", default=r"D:/stage3/optionB_run_nomode3/lora_last.safetensors")
-    ap.add_argument("--rank", type=int, default=16, help="LoRA rank -- MUST match the checkpoint (r4->4)")
-    ap.add_argument("--alpha", type=int, default=None)
+    # Normally invoked by pipeline/oneshots.py, which passes every path explicitly from
+    # pipeline/config.py according to SA3_VARIANT. The rank MUST match the adapter and the base
+    # model MUST be the one it was trained on (small-r4 -> sa3-base, medium-r16 -> sa3-base-medium).
+    ap.add_argument("--ckpt", required=True, help="LoRA adapter .safetensors (see models/lora/)")
+    ap.add_argument("--rank", type=int, required=True, help="LoRA rank -- MUST match the adapter (r4 -> 4)")
+    ap.add_argument("--alpha", type=int, default=None, help="LoRA alpha (default: equal to rank)")
     ap.add_argument("--repo-cfg", default=None, help="base model_config.json (small vs medium)")
     ap.add_argument("--base-ckpt", default=None, help="base model.safetensors (small vs medium)")
     ap.add_argument("--start-sec", type=float, default=0.0)
@@ -60,7 +63,11 @@ def main():
     sf.write(os.path.join(args.out,"loop_input.wav"), seg.mean(0).clamp(-1,1).numpy(), sr, subtype="PCM_24")
     print(f"[loop] {os.path.basename(args.loop)} | 4s window @ {args.start_sec}s -> {nL} latent frames", flush=True)
 
-    # build canvas: loop | silence gap | (one-shot region generated) | silence pad
+    # build canvas: loop | silence-latent gap | (one-shot region generated) | zero tail padding.
+    # The GAP is filled with the SAME encoding of silence (zero is not silence in this latent
+    # space); the TAIL is left as zeros and excluded from attention by padding_mask below.
+    # This mirrors the training canvas exactly (sa3/dataset.py:_build) -- do not "fix" the tail
+    # to silence here, that would be a train/inference mismatch.
     sil=torch.from_numpy(np.load(SIL).astype(np.float32)).unsqueeze(1).to(T.DEV)  # (256,1)
     N=256; gap=3; os0=nL+gap; nO=11; os1=os0+nO
     x1=torch.zeros(256,N,device=T.DEV); x1[:,:nL]=zL; x1[:,nL:os0]=sil.expand(-1,gap)

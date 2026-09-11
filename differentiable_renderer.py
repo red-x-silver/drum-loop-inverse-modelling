@@ -1,8 +1,8 @@
 """
 differentiable_renderer.py -- a fully differentiable drum-loop renderer.
 
-This reproduces the ESSENTIAL audio rendering of render_test_dataset_44k.py
-(KonSequencer.render_multi_tracks_{monophonic,polyphonic}: velocity-scaled one-shots
+This reproduces the ESSENTIAL audio rendering of render_dataset.py
+(TaoDrumMachine.sequencer.render_multi_tracks_{monophonic,polyphonic}: velocity-scaled one-shots
 placed at onset positions, overlap-added, with small smoothing envelopes), but
 DELIBERATELY omits every non-differentiable stage of that pipeline:
 

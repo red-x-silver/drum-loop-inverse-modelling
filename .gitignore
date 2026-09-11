@@ -1,0 +1,35 @@
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# --- virtual environments ----------------------------------------------------
+.venv/
+venv/
+env/
+.env
+
+# --- downloaded base models (not redistributed; see each folder's README) -----
+models/sa3-base/*
+!models/sa3-base/.gitkeep
+!models/sa3-base/README.md
+models/sa3-base-medium/*
+!models/sa3-base-medium/.gitkeep
+!models/sa3-base-medium/README.md
+
+# --- runtime caches and outputs (auto-populated) -----------------------------
+cache/*
+!cache/.gitkeep
+webapp/static/uploads/*
+!webapp/static/uploads/.gitkeep
+webapp/static/results/*
+!webapp/static/results/.gitkeep
+out/
+
+# --- OS / editor -------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
