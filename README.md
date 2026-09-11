@@ -2,14 +2,14 @@
 
 Given a single **drum-loop audio file**, estimate the drum-machine parameters that reconstruct it:
 tempo, per-instrument onsets, one-shot samples, per-onset velocities, and a quantised 16-step
-pattern. This is the **deployment** build of the thesis system
+pattern with per-track swing ratios. This is the **deployment** build of the thesis system
 
 The pipeline is:
 
 ```
-loop.wav ─▶ [pad/truncate to 4 s] ─▶ ADT + tempo (shared trunk) ─▶ peak-pick onsets
+loop.wav ─▶ [pad/truncate to 4 s] ─▶ ADT + tempo estimation (shared trunk) ─▶ peak-pick onsets
          ─▶ one-shot extraction (Stable-Audio-3 + LoRA) ─▶ analysis-by-synthesis velocities
-         ─▶ quantisation ─▶ {tempo, onsets, one-shots, velocities, step vectors}
+         ─▶ quantisation ─▶ {tempo, onsets, one-shots, velocities, step vectors, swing}
 ```
 
 ## Models
@@ -132,18 +132,21 @@ python sa3/train.py --full --steps 4000 --transient-weight 0.1 --drop-modes mode
 effects applied to the mixture but not to the ground-truth one-shot, the pair would be noisy
 supervision that forces the model to learn effect-inversion on top of extraction.
 
+The run writes a checkpoint every 500 steps (`lora_step*.safetensors`); both released adapters are
+the **4000-step** checkpoint, `lora_step04000` (identical to `lora_last` for a 4000-step run).
+
 </details>
 
 ## Usage
 
 One driver, four modes:
 
-| Mode         | What it does                                              | Needs SA3? |
-|--------------|----------------------------------------------------------|:----------:|
-| `transcribe` | ADT + tempo → tempo (BPM) + per-instrument onset times    | no         |
-| `oneshots`   | one-shot extraction → kick / snare / hi-hat one-shot wavs  | yes        |
-| `full`       | transcribe + oneshots + per-onset velocities (+ recon)    | yes        |
-| `params`     | full + quantisation → 16-step drum-machine parameters     | yes        |
+| Mode         | What it does                                                          | Needs SA3? |
+|--------------|-----------------------------------------------------------------------|:----------:|
+| `transcribe` | ADT + tempo → tempo (BPM) + per-instrument onset times                 | no         |
+| `oneshots`   | one-shot extraction → kick / snare / hi-hat one-shot wavs              | yes        |
+| `full`       | transcribe + oneshots + per-onset velocities (+ recon)                 | yes        |
+| `params`     | full + quantisation → step vectors, step velocities, beat type, swing  | yes        |
 
 ### Command line
 
@@ -195,14 +198,34 @@ python webapp/app.py          # serves http://127.0.0.1:5001
   "reconstruction_loss": 1.94,
   "quantized": {
     "num_steps": 16, "steps_per_beat": 4,
-    "beat_type": "16th",
-    "swing": [0.5, 0.5, 0.5],
+    "beat_type": "16th",                                 // "16th" or "8th"
+    "swing": [0.5, 0.5, 0.5],                            // per-track swing ratio, kick/snare/hh
     "step_vectors":    [[1,0,0,0, 1,0,0,0, ...], ...],   // kick, snare, hh
     "step_velocities": [[...], ...],
     "instruments": ["kick", "snare", "hh"]
   }
 }
 ```
+
+### The quantised parameters
+
+Assuming 4/4 and a 16-step grid, `quantized` holds the step-based half of the parameter set:
+
+| Field | Meaning |
+|---|---|
+| `step_vectors` | per-instrument binary 16-step onset vectors |
+| `step_velocities` | the velocity of each active step, in `[0, 1]` |
+| `beat_type` | metrical resolution, inferred from which steps are occupied: `"16th"` if any odd step is active, else `"8th"`. It fixes which steps a swing feel displaces — the off-beat 8ths `{2,6,10,14}`, or every odd step |
+| `swing` | **per-track swing ratio**, one per instrument |
+
+**Swing** is estimated, not assumed. Onsets are assigned to steps by flooring against the grid with
+a forward-rounding threshold of ρ = 0.75, deliberately asymmetric so a late, swung onset is not
+snapped prematurely onto the next step. The timing residuals of the onsets landing on
+swing-affected steps then recover the ratio by inverting the renderer's swing displacement
+δ = (2σ−1)τ, and the result is clipped to `[0.50, 0.71]` and snapped to the preset classes
+`[0.50, 0.54, 0.58, 0.62, 0.66, 0.71]`. `0.50` means straight (un-swung), and is also the default
+for a track with no onset on a swing-affected step. So micro-timing survives quantisation as a
+per-track parameter even though the onsets themselves are snapped to the grid.
 
 ### Notes on the quantised output
 
