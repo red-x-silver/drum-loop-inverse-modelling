@@ -4,19 +4,20 @@ Self-contained implementation matching the thesis description exactly (one bar, 
   * onset -> step: floor against the grid with a swing-tolerant forward rounding at rho, then mod N
   * beat-type: 16th if any occupied odd step, else 8th
   * swing per track: mean grid residual on swing-affected steps, inverting delta = (2*sigma-1)*tau,
-    clipped to [0.50, 0.75] and snapped to the established swing presets
-  * step velocity: SAME floor+rho assignment as q_j; mean of onsets folded on the step
+    clipped to [0.50, 0.71] and snapped to the established swing presets
+  * step velocity: SAME floor+rho assignment as q_j; MAX of onsets folded on the step
     (track-mean fallback for an active step with no folded onset)
 
-rho and the swing classes are the established swing presets used by the dataset generator; rho is the
-largest preset (0.75) so even a maximally-swung onset is not rounded forward off its step.
+The swing classes are those used by the dataset generator (kon_sequencer/data_modules.py). rho (0.75)
+exceeds the largest swing offset ratio (2*0.71 - 1 = 0.42) so even a maximally-swung onset is not
+rounded forward off its step.
 """
 import numpy as np
 
 from . import config as C
 
 RHO = 0.75
-SWING_CLASSES = [0.50, 0.54, 0.58, 0.60, 0.62, 0.66, 0.70, 0.75]
+SWING_CLASSES = [0.50, 0.54, 0.58, 0.62, 0.66, 0.71]
 
 
 def _assign_step(t, tau, num_steps, rho=RHO):
@@ -59,13 +60,15 @@ def quantize_params(onsets_s, velocities, tempo, num_steps=16, steps_per_beat=4)
         deltas = [t - k * tau for (k, t) in assigned[j] if k in W]
         if deltas:
             s = 0.5 * (float(np.mean(deltas)) / tau + 1.0)
-            s = float(np.clip(s, 0.50, 0.75))
+            s = float(np.clip(s, 0.50, 0.71))
             s = min(SWING_CLASSES, key=lambda c: abs(c - s))
         else:
             s = 0.50
         swing.append(round(s, 3))
 
-    # per-step velocities aligned to q_j (same assignment); track-mean / 0.8 fallback
+    # per-step velocities aligned to q_j (same assignment); track-mean / 0.8 fallback.
+    # When several onsets fold onto one step, the MAX (loudest hit) represents the step, since a
+    # drum-machine step carries a single velocity and the loudest onset is the perceptually dominant one.
     step_velos = []
     for j in range(n):
         vj = velocities[j] if (velocities is not None and velocities[j] is not None) else None
@@ -77,7 +80,7 @@ def quantize_params(onsets_s, velocities, tempo, num_steps=16, steps_per_beat=4)
         for s in range(num_steps):
             if step_vectors[j][s]:
                 acc = vel_acc[j][s]
-                row[s] = round(float(np.mean(acc)) if acc else tmean, 4)
+                row[s] = round(float(max(acc)) if acc else tmean, 4)
         step_velos.append(row)
 
     return {"num_steps": num_steps, "steps_per_beat": steps_per_beat,

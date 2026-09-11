@@ -1,8 +1,8 @@
 # Drum-loop inverse modelling
 
-Given a single **drum-loop audio file**, estimate the drum-machine parameters that reproduce it:
+Given a single **drum-loop audio file**, estimate the drum-machine parameters that reconstruct it:
 tempo, per-instrument onsets, one-shot samples, per-onset velocities, and a quantised 16-step
-pattern. This is the **deployment** build of the thesis system — inference only, no training code.
+pattern. This is the **deployment** build of the thesis system
 
 The pipeline is:
 
@@ -14,8 +14,8 @@ loop.wav ─▶ [pad/truncate to 4 s] ─▶ ADT + tempo (shared trunk) ─▶ p
 
 ## Models
 
-- **ADT + tempo (shared trunk).** The **ADT** network is an ADTOF-style CRNN (`ADTOFFrameRNN`), the
-  `baseline_all` checkpoint, producing 3-channel (kick / snare / hi-hats) onset activations. The
+- **ADT + tempo (shared trunk).** The **ADT** network is an ADTOF-style CRNN, the
+  `baseline_all` (from the thesis experiment) checkpoint, producing 3-channel (kick / snare / hi-hats) onset activations. The
   **tempo** head is a madmom-style TCN (`tcn-faithful`, 7 dilated blocks, receptive field ~5 s)
   tapped at the **`shallow`** position (post-CNN) on the *frozen* ADT trunk, giving a 141-way BPM
   classifier (60–200 BPM). One forward pass yields onsets **and** tempo. Both checkpoints are
